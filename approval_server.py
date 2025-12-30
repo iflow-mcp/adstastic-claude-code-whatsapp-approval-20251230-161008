@@ -4,17 +4,24 @@ Local MCP approval server that sends WhatsApp messages via Twilio
 """
 
 import os
+import sys
 import json
 import uuid
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
+
+# Support test mode without Twilio
+TEST_MODE = os.environ.get("TEST_MODE", "false").lower() == "true"
+
+if not TEST_MODE:
+    from twilio.rest import Client
+
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from sqlmodel import Field, SQLModel, Session, create_engine, select
-from twilio.rest import Client
 
 # Load environment variables
 load_dotenv()
@@ -51,7 +58,7 @@ TWILIO_CONTENT_SID = os.environ.get("TWILIO_CONTENT_SID")
 APPROVAL_PHONE = os.environ.get("APPROVAL_PHONE")
 
 twilio_client = None
-if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+if not TEST_MODE and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
     twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 
@@ -80,6 +87,11 @@ async def permissions__approve(tool_name: str, input: dict, reason: str = "") ->
         request = f"*Reason:* {reason}\n\n{request}"
     
     print(f"🤖 Claude requesting approval: {request}")
+    
+    # Test mode: auto-approve without Twilio
+    if TEST_MODE:
+        print("⚠️  TEST MODE: Auto-approving request")
+        return {"approved": True, "test_mode": True}
     
     if not twilio_client:
         print("❌ Twilio not configured")
@@ -329,36 +341,56 @@ async def twilio_webhook(request: Request):
     })
 
 
-if __name__ == "__main__":
-    
+def main():
+    """Main entry point for the approval server"""
     print("🚀 Starting approval MCP server...")
+    if TEST_MODE:
+        print("⚠️  RUNNING IN TEST MODE - Auto-approving all requests")
     print(f"📱 Approval messages will be sent to: {APPROVAL_PHONE or 'NOT CONFIGURED'}")
     print(f"🔧 Twilio configured: {twilio_client is not None}")
     
-    if not APPROVAL_PHONE:
+    if not APPROVAL_PHONE and not TEST_MODE:
         print("⚠️  WARNING: APPROVAL_PHONE not set in environment variables")
-    print()
-    print("🌐 Server endpoints:")
-    print(f"   • MCP: http://localhost:{SERVER_PORT} (FastMCP HTTP server)") 
-    print("   • Webhook: POST /twilio-webhook (for Twilio)")
-    print("   • Test: GET /twilio-webhook (browser test)")
-    print()
-    print("📡 Expose webhook with ngrok:")
-    print(f"   ngrok http {SERVER_PORT}")
-    print()
-    print("⚙️  Configure Twilio webhook:")
-    print("   Method: POST")
-    print("   URL: https://your-ngrok-url.ngrok.io/twilio-webhook")
-    print()
-    print("💡 To test:")
-    print("1. Configure Claude to connect to this server")
-    print("2. Ask Claude to request approval for something")
-    print("3. Respond to the WhatsApp message")
-    print("\n🛑 Press Ctrl+C to stop")
     
-    # FastMCP runs with SSE transport
+    # Check transport type from environment or default to stdio
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    
+    if transport == "sse":
+        # SSE mode (default for this project)
+        print()
+        print("🌐 Server endpoints:")
+        print(f"   • MCP: http://localhost:{SERVER_PORT} (FastMCP HTTP server)") 
+        print("   • Webhook: POST /twilio-webhook (for Twilio)")
+        print("   • Test: GET /twilio-webhook (browser test)")
+        print()
+        print("📡 Expose webhook with ngrok:")
+        print(f"   ngrok http {SERVER_PORT}")
+        print()
+        print("⚙️  Configure Twilio webhook:")
+        print("   Method: POST")
+        print("   URL: https://your-ngrok-url.ngrok.io/twilio-webhook")
+        print()
+        print("💡 To test:")
+        print("1. Configure Claude to connect to this server")
+        print("2. Ask Claude to request approval for something")
+        print("3. Respond to the WhatsApp message")
+        print("\n🛑 Press Ctrl+C to stop")
+    else:
+        # stdio mode
+        print()
+        print("📡 Running in STDIO mode")
+        print("\n🛑 Press Ctrl+C to stop")
+    
+    # FastMCP runs with specified transport
     try:
-        mcp.run(transport="sse", host="127.0.0.1", port=SERVER_PORT)
+        if transport == "sse":
+            mcp.run(transport="sse", host="127.0.0.1", port=SERVER_PORT)
+        else:
+            mcp.run(transport="stdio")
     except Exception as e:
         print(f"❌ Server error: {e}")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

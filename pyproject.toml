@@ -1,9 +1,9 @@
 [project]
-name = "claude-code-approval"
+name = "iflow-mcp_adstastic_claude-code-approval"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.21.0",
     "fastapi>=0.115.12",
@@ -15,3 +15,13 @@ dependencies = [
     "twilio>=9.6.2",
     "uvicorn>=0.34.2",
 ]
+
+[project.scripts]
+approval-server = "approval_server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
